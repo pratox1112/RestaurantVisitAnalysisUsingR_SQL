@@ -1,0 +1,192 @@
+---
+title: "Analyze Sales"
+subtitle: "CS5200 Practicum I"
+author: "Pratosh Karthikeyan"
+date: "Spring 2025"
+output: pdf_document
+---
+
+```{r db_connection, include=FALSE}
+# Load Required Libraries
+library(DBI)
+library(RMySQL)
+library(dplyr)
+library(kableExtra)
+
+# -----------------------------
+# 1) Database Connection Setup
+# -----------------------------
+db_host <- "restaurant-db-cs5200-practicum1-pratoshk.c.aivencloud.com"
+db_user <- "avnadmin"
+db_password <- "AVNS_IChSyWGD4QyeTya62-E"
+db_name <- "defaultdb"
+db_port <- 12512
+
+# Connect to MySQL
+con <- dbConnect(RMySQL::MySQL(),
+                 host = db_host,
+                 user = db_user,
+                 password = db_password,
+                 dbname = db_name,
+                 port = db_port)
+```
+
+
+```{r restaurant_analysis, results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+# Query to Fetch Restaurant Analysis Data
+query <- "
+SELECT 
+    r.Restaurant AS RestaurantName,
+    COUNT(v.VisitID) AS TotalVisits,
+    COUNT(DISTINCT v.CustomerID) AS UniqueCustomers,
+    SUM(CASE WHEN c.LoyaltyMember = 1 THEN 1 ELSE 0 END) AS LoyaltyCustomers,
+    SUM(b.FoodBill) AS TotalFoodRevenue,
+    SUM(b.AlcoholBill) AS TotalAlcoholRevenue
+FROM RESTAURANT r
+JOIN VISIT v ON r.RestaurantID = v.RestaurantID
+LEFT JOIN CUSTOMER c ON v.CustomerID = c.CustomerID
+LEFT JOIN BILL b ON v.VisitID = b.VisitID
+GROUP BY r.Restaurant
+ORDER BY TotalFoodRevenue DESC;
+"
+
+
+# Fetch data from database
+restaurant_analysis <- dbGetQuery(con, query)
+
+# Ensure Proper Column Headers (FIXED)
+colnames(restaurant_analysis) <- c(
+  "Restaurant",
+  "Total Visits",
+  "Unique Customers",
+  "Loyalty Members",
+  "Food Sales",
+  "Alcohol Sales"  # Only 6 columns, match exactly
+)
+
+# Format Numbers Properly
+restaurant_analysis <- restaurant_analysis %>%
+  mutate(
+    `Food Sales` = sprintf("%.2f", as.numeric(`Food Sales`)),
+    `Alcohol Sales` = sprintf("%.5f", as.numeric(`Alcohol Sales`))  # Preserve 5 decimals
+  )
+
+
+kbl(restaurant_analysis, 
+    format = "latex",  # Change to "latex" if knitting PDF
+    caption = "Restaurant Analysis Summary",
+    align = c('l', 'r', 'r', 'r', 'r', 'r'),
+    booktabs = TRUE
+) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE
+  ) %>%
+  row_spec(0, bold = TRUE)
+
+```
+
+
+```{r analysis_by_year, results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+# Query to Fetch Analysis by Year Data
+query <- "
+SELECT 
+    YEAR(v.VisitDate) AS Year,
+    SUM(b.FoodBill + b.AlcoholBill) AS TotalRevenue,
+    AVG(b.FoodBill + b.AlcoholBill) AS AvgPerPartySpent,
+    AVG(v.PartySize) AS AvgPartySize
+FROM VISIT v
+JOIN BILL b ON v.VisitID = b.VisitID
+GROUP BY Year
+ORDER BY Year ASC;
+"
+
+# Fetch data from database
+yearly_analysis <- dbGetQuery(con, query)
+
+# Ensure Proper Column Headers
+colnames(yearly_analysis) <- c(
+  "Year",
+  "Total Revenue ($)",
+  "Avg Per Party Spent ($)",
+  "Avg Party Size"
+)
+
+# Format and Display Table
+yearly_analysis %>%
+  mutate(
+    `Total Revenue ($)` = sprintf("$%.2f", `Total Revenue ($)`),
+    `Avg Per Party Spent ($)` = sprintf("$%.2f", `Avg Per Party Spent ($)`),
+    `Avg Party Size` = sprintf("%.2f", `Avg Party Size`)
+  ) %>%
+  kbl(
+    format = "latex",  # Change to "latex" when generating PDF
+    caption = "Yearly Revenue and Average Party Analysis",
+    align = c('r', 'r', 'r', 'r'),
+    booktabs = TRUE,
+    longtable = FALSE
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    font_size = 10,
+    position = "center"
+  ) %>%
+  row_spec(0, bold = TRUE)
+```
+
+
+
+## Trend by Year
+
+```{r trend_by_year, echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=6}
+# Ensure the yearly_analysis dataframe exists from the previous query
+if (!exists("yearly_analysis")) {
+  query <- "
+  SELECT 
+      YEAR(v.VisitDate) AS Year,
+      SUM(b.FoodBill + b.AlcoholBill) AS TotalRevenue
+  FROM VISIT v
+  JOIN BILL b ON v.VisitID = b.VisitID
+  GROUP BY Year
+  ORDER BY Year ASC;
+  "
+
+  yearly_analysis <- dbGetQuery(con, query)
+  colnames(yearly_analysis) <- c("Year", "Total Revenue")
+}
+
+# Convert Year to integer (if not already)
+yearly_analysis$Year <- as.integer(yearly_analysis$Year)
+
+# Set up larger margins for better spacing
+par(mar = c(5, 5, 4, 2))  # Adjust bottom, left, top, right margins
+
+# Plot the Trend by Year with larger size
+plot(yearly_analysis$Year, yearly_analysis$`Total Revenue`, 
+     type = "o",                    # Line plot with points
+     col = "blue",                   # Line color
+     xlab = "Year",                   # X-axis label
+     ylab = "Total Revenue ($)",       # Y-axis label
+     main = "Trend of Total Revenue by Year", # Chart title
+     pch = 16,                        # Point style
+     lwd = 3,                          # Line width (thicker)
+     cex.lab = 1.5, cex.axis = 1.3, cex.main = 1.7) # Increase text sizes
+
+# Add grid lines
+grid(col = "gray90")
+
+# Add data labels at each point
+text(yearly_analysis$Year, yearly_analysis$`Total Revenue`, 
+     labels = round(yearly_analysis$`Total Revenue`, 2), 
+     pos = 3, cex = 1.2, col = "black", font = 2) # Larger font size for labels
+
+# Add a legend with bigger text
+legend("topright", legend = "Total Revenue ($)", 
+       col = "blue", lty = 1, pch = 16, lwd = 3, cex = 1.3, bty = "n")
+```
+
+
+
+```{r disconnect, results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+invisible(dbDisconnect(con))
