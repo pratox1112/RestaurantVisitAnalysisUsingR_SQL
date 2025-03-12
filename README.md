@@ -73,8 +73,8 @@ source("testDBLoading.R")
 - Enhance **reporting and analytics** with visual dashboards.
 
 ## Author
-**Your Name**  
-**Spring 2025**  
+**Pratosh Karthikeyan**  
+**pratosh2002@gmail.com**  
 
 For any questions or contributions, feel free to reach out!
 
